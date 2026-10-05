@@ -17,11 +17,12 @@ export default function Skybox() {
   const texture = useTexture(SKYBOX_PATH);
   const setSceneReady = useExperience((s) => s.setSceneReady);
 
-  useEffect(() => {
-    texture.colorSpace = SRGBColorSpace;
-    texture.needsUpdate = true;
-    setSceneReady(true);
-  }, [texture, setSceneReady]);
+useEffect(() => {
+  const tex = texture;
+  tex.colorSpace = SRGBColorSpace;
+  tex.needsUpdate = true;
+  setSceneReady(true);
+}, [texture, setSceneReady]);
 
   useFrame((state, delta) => {
     const mesh = meshRef.current;

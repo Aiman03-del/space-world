@@ -1,5 +1,6 @@
 import SmoothScroll from "@/components/SmoothScroll";
 import SpaceCanvasLoader from "@/components/SpaceCanvasLoader";
+import Intro from "@/components/intro/Intro";
 
 export default function Home() {
   return (
@@ -10,12 +11,10 @@ export default function Home() {
         <SpaceCanvasLoader />
       </div>
 
+      <Intro />
+
       <div className="relative z-10 h-[500vh]">
-        <section className="flex h-screen items-center justify-center">
-          <h1 className="text-5xl font-light tracking-[0.3em] text-white">
-            SPACE WORLD
-          </h1>
-        </section>
+        <section className="h-screen" />
       </div>
     </main>
   );

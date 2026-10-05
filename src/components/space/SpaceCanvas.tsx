@@ -3,34 +3,40 @@
 import { Suspense, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { MathUtils } from "three";
-import type { Mesh } from "three";
+import { MathUtils,Mesh,Vector3 } from "three";
 import { useExperience } from "@/store/useExperience";
 import SpaceEnvironment from "./SpaceEnvironment";
-
+import { astronautState } from "@/store/astronautState";
 const START_Z = 30;
 const END_Z = 6;
+const FOLLOW_OFFSET = new Vector3(0, 1.5, 9);
+const desired = new Vector3();
+const lookTarget = new Vector3();
 
 function CameraRig() {
-  useFrame((state) => {
-    const { introProgress, scrollProgress } = useExperience.getState();
+  useFrame((state, rawDelta) => {
+    const delta = Math.min(rawDelta, 0.05);
+    const { introProgress, introDone, scrollProgress } = useExperience.getState();
 
-    // Temporary scroll drift, it will be replaced by the game camera later
-    const targetZ =
-      START_Z + (END_Z - START_Z) * introProgress - scrollProgress * 3;
+    if (!introDone) {
+      // সিনেমাটিক ইন্ট্রো: ক্যামেরা সামনে এগোয়
+      state.camera.position.z = START_Z + (END_Z - START_Z) * introProgress;
+      state.camera.position.x = MathUtils.lerp(state.camera.position.x, state.pointer.x * 0.4, 0.04);
+      state.camera.position.y = MathUtils.lerp(state.camera.position.y, state.pointer.y * 0.25, 0.04);
+      state.camera.lookAt(0, 0, 0);
+      return;
+    }
 
-    state.camera.position.z = targetZ;
-    state.camera.position.x = MathUtils.lerp(
-      state.camera.position.x,
-      state.pointer.x * 0.4,
-      0.04
-    );
-    state.camera.position.y = MathUtils.lerp(
-      state.camera.position.y,
-      state.pointer.y * 0.25,
-      0.04
-    );
-    state.camera.lookAt(0, 0, 0);
+    // গেম ক্যামেরা: অ্যাস্ট্রোনটকে স্মুথলি ফলো
+    const { position } = astronautState;
+    desired.copy(position).add(FOLLOW_OFFSET);
+    desired.z -= scrollProgress * 3;
+
+    const t = 1 - Math.exp(-3 * delta);
+    state.camera.position.lerp(desired, t);
+
+    lookTarget.set(position.x, position.y, position.z);
+    state.camera.lookAt(lookTarget);
   });
 
   return null;

@@ -1,141 +1,111 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Color, Euler, IcosahedronGeometry, Object3D, Vector3 } from "three";
-import type { BufferGeometry, InstancedMesh } from "three";
+import { Float } from "@react-three/drei";
+import { MathUtils } from "three";
+import type { Group } from "three";
+import { useArrowKeys } from "@/hooks/useArrowKeys";
+import { useExperience } from "@/store/useExperience";
+import { astronautState } from "@/store/astronautState";
+import AstronautModel from "./AstronautModel";
 
-const COUNT = 60;
-const MIN_RADIUS = 14;
-const MAX_RADIUS = 90;
+const USE_MODEL = true;
 
-type RockData = {
-  position: Vector3;
-  rotation: Euler;
-  spin: Vector3;
-  scale: number;
-  tone: number;
-};
+const ACCELERATION = 26;
+const DAMPING = 2.4; // বেশি হলে তাড়াতাড়ি থামে
+const MAX_SPEED = 7;
+const BOUNDS = { x: 14, y: 8 };
 
-function createRng(seed: number) {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function PlaceholderAstronaut() {
+  return (
+    <group>
+      <mesh position={[0, 0.9, 0]}>
+        <sphereGeometry args={[0.45, 24, 24]} />
+        <meshStandardMaterial color="#f2f4ff" roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.9, 0.3]}>
+        <sphereGeometry args={[0.3, 24, 24]} />
+        <meshStandardMaterial color="#10162e" metalness={0.8} roughness={0.15} />
+      </mesh>
+      <mesh>
+        <capsuleGeometry args={[0.4, 0.7, 8, 16]} />
+        <meshStandardMaterial color="#e8ebf7" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0, -0.45]}>
+        <boxGeometry args={[0.6, 0.8, 0.3]} />
+        <meshStandardMaterial color="#b9c0d8" roughness={0.6} />
+      </mesh>
+    </group>
+  );
 }
 
-function createRockGeometry(): BufferGeometry {
-  const geometry = new IcosahedronGeometry(1, 2);
-  const positions = geometry.attributes.position;
-  const vertex = new Vector3();
+export default function Astronaut() {
+  const rootRef = useRef<Group>(null);
+  const tiltRef = useRef<Group>(null);
+  const keys = useArrowKeys();
 
-  for (let i = 0; i < positions.count; i++) {
-    vertex.fromBufferAttribute(positions, i);
+  useFrame((_, rawDelta) => {
+    const root = rootRef.current;
+    const tilt = tiltRef.current;
+    if (!root || !tilt) return;
 
-    // Deterministic displacement based on position, so shared vertices move together
-    const bump =
-      Math.sin(vertex.x * 3.1 + 1.3) * Math.cos(vertex.y * 2.7 + 0.4) +
-      Math.sin(vertex.z * 4.3 + vertex.x * 1.9);
+    const delta = Math.min(rawDelta, 0.05); // ট্যাব সুইচের পর লাফ আটকায়
+    const { introDone } = useExperience.getState();
+    const { position, velocity } = astronautState;
+    const k = keys.current;
 
-    vertex.multiplyScalar(1 + bump * 0.18);
-    positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
-  }
+    // ইন্ট্রো শেষ হলেই ইনপুট কাজ করবে
+    const inputX = introDone ? Number(k.right) - Number(k.left) : 0;
+    const inputY = introDone ? Number(k.up) - Number(k.down) : 0;
 
-  geometry.computeVertexNormals();
-  return geometry;
-}
+    velocity.x += inputX * ACCELERATION * delta;
+    velocity.y += inputY * ACCELERATION * delta;
 
-function createRocks(): RockData[] {
-  const rand = createRng(7);
-  const rocks: RockData[] = [];
+    // frame-rate independent damping
+    const damp = Math.exp(-DAMPING * delta);
+    velocity.x *= damp;
+    velocity.y *= damp;
 
-  for (let i = 0; i < COUNT; i++) {
-    const theta = rand() * Math.PI * 2;
-    const phi = Math.acos(2 * rand() - 1);
-    const radius = MIN_RADIUS + rand() * (MAX_RADIUS - MIN_RADIUS);
-
-    rocks.push({
-      position: new Vector3(
-        radius * Math.sin(phi) * Math.cos(theta),
-        radius * Math.cos(phi) * 0.6,
-        radius * Math.sin(phi) * Math.sin(theta)
-      ),
-      rotation: new Euler(
-        rand() * Math.PI * 2,
-        rand() * Math.PI * 2,
-        rand() * Math.PI * 2
-      ),
-      spin: new Vector3(
-        (rand() - 0.5) * 0.12,
-        (rand() - 0.5) * 0.12,
-        (rand() - 0.5) * 0.12
-      ),
-      scale: 0.3 + Math.pow(rand(), 3) * 3.5,
-      tone: 0.22 + rand() * 0.2,
-    });
-  }
-
-  return rocks;
-}
-
-export default function Asteroids() {
-  const meshRef = useRef<InstancedMesh>(null);
-  const dummy = useMemo(() => new Object3D(), []);
-  const geometry = useMemo(() => createRockGeometry(), []);
-  const rocks = useMemo(() => createRocks(), []);
-
-  useEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-
-    const color = new Color();
-    rocks.forEach((rock, index) => {
-      color.setHSL(0.07, 0.15, rock.tone);
-      mesh.setColorAt(index, color);
-    });
-
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
+    const speed = Math.hypot(velocity.x, velocity.y);
+    if (speed > MAX_SPEED) {
+      velocity.x = (velocity.x / speed) * MAX_SPEED;
+      velocity.y = (velocity.y / speed) * MAX_SPEED;
     }
-  }, [rocks]);
 
-  useFrame((state) => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
+    position.x += velocity.x * delta;
+    position.y += velocity.y * delta;
 
-    const time = state.clock.elapsedTime;
+    // সীমানা: আটকে দিন এবং দেয়ালের দিকের velocity শূন্য করুন
+    if (Math.abs(position.x) > BOUNDS.x) {
+      position.x = Math.sign(position.x) * BOUNDS.x;
+      velocity.x = 0;
+    }
+    if (Math.abs(position.y) > BOUNDS.y) {
+      position.y = Math.sign(position.y) * BOUNDS.y;
+      velocity.y = 0;
+    }
 
-    rocks.forEach((rock, index) => {
-      dummy.position.copy(rock.position);
-      dummy.rotation.set(
-        rock.rotation.x + rock.spin.x * time,
-        rock.rotation.y + rock.spin.y * time,
-        rock.rotation.z + rock.spin.z * time
-      );
-      dummy.scale.setScalar(rock.scale);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(index, dummy.matrix);
-    });
+    root.position.copy(position);
 
-    mesh.instanceMatrix.needsUpdate = true;
+    // মুভমেন্টের দিকে স্মুথলি ঘোরানো
+    const targetYaw = MathUtils.clamp(velocity.x * 0.18, -1.0, 1.0);
+    const targetPitch = MathUtils.clamp(-velocity.y * 0.12, -0.7, 0.7);
+    const targetRoll = MathUtils.clamp(-velocity.x * 0.08, -0.5, 0.5);
+    const t = 1 - Math.exp(-6 * delta);
+
+    tilt.rotation.y = MathUtils.lerp(tilt.rotation.y, targetYaw, t);
+    tilt.rotation.x = MathUtils.lerp(tilt.rotation.x, targetPitch, t);
+    tilt.rotation.z = MathUtils.lerp(tilt.rotation.z, targetRoll, t);
   });
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[geometry, undefined, COUNT]}
-      frustumCulled={false}
-    >
-      <meshStandardMaterial
-        color="#ffffff"
-        roughness={0.95}
-        metalness={0.05}
-        flatShading
-      />
-    </instancedMesh>
+    <group ref={rootRef}>
+      <group ref={tiltRef}>
+        <Float speed={1.6} rotationIntensity={0.25} floatIntensity={0.6}>
+          {USE_MODEL ? <AstronautModel /> : <PlaceholderAstronaut />}
+        </Float>
+      </group>
+    </group>
   );
 }
